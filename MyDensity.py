@@ -1118,12 +1118,21 @@ class Density():
         # fit_parameters=[mu_pho_abs,r0,r_sam,cst]  #extra important
         self.Chan = int((self.energy*1000)/50)
         
-        if len(self.c)!=len(self.d):
+        if len(self.c)>len(self.d):
             self.c=np.arange(0,(self.y1-self.x1)-self.xstep*0.1,self.xstep*0.1)
             self.c1=np.arange(0,(self.y1-self.x1)-self.xstep*0.1,0.00005)
+        if len(self.c)<len(self.d):
+            self.c=np.arange(0,(self.y1-self.x1)+self.xstep*0.1,self.xstep*0.1)
+            self.c1=np.arange(0,(self.y1-self.x1)+self.xstep*0.1,0.00005)
         else:
              self.c
              self.c1
+        self.l=np.zeros(len(self.c1))
+        self.t=np.zeros(len(self.c1))
+        self.delta=np.zeros(len(self.c1))
+        self.fit_parameters=[self.mu_pho_abs,self.r_sam, self.r0]  #extra important
+        # fit_parameters=[mu_pho_abs,r0,r_sam,cst]  #extra important
+        self.Chan = int((self.energy*1000)/50)
              
         if self.normalization == 'mean':
             if Norm_point == None:
