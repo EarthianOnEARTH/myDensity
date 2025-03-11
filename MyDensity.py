@@ -520,12 +520,14 @@ class Density():
         self.d=np.asarray(self.d)
         self.d=self.d.transpose()
         self.d=self.d[:,:].sum(1)
+        self.bkg = False
         plt.close('Data')
         plt.figure('Data')
         plt.plot(self.xaxis, self.d,'ko', label = str(self.data_filename[:-7]))
         plt.legend()
 
     def removeBackground(self, bg_filename, scale = 1):
+        self.bkg = False
         self.scale = scale
         print (Fore.RED, 'Loading and removing background...')
         self.bg_data_filename = str(bg_filename)+ '.pickle'
@@ -607,8 +609,10 @@ class Density():
         plt.plot(self.xaxis, self.d/(self.scale*self.bg_d),'x',label = "difference")
         plt.legend()
         self.d = self.d/(self.scale*self.bg_d)
+        self.bkg = True
 
     def removeBackground_click(self, bg_filename):
+        self.bkg = True
         print (Fore.RED, 'Loading and removing background...')
         self.bg_data_filename = str(bg_filename)+ '.pickle'
         print(Fore.WHITE, 'Reading ' + self.bg_data_filename )
@@ -804,6 +808,7 @@ class Density():
         self.d=np.asarray(self.d)
         self.d=self.d.transpose()
         self.d=self.d[:,:].sum(1)
+        self.bkg = False
         #plt.close('Data')
         plt.figure('Data')
         plt.plot(self.xaxis, self.d,'o',label = str(self.data_filename))
@@ -821,6 +826,7 @@ class Density():
         self.xstep = (self.c[1] - self.c[0])  #### need to check that
         self.step = len(self.data)
         self.xaxis = np.linspace(self.x1,self.y1, self.step)
+        self.bkg = False
 
         plt.figure('Data')
         plt.plot(self.xaxis, self.d,'o',label = str(self.data_filename))
@@ -1051,6 +1057,41 @@ class Density():
                 self.fit=self.cst*np.exp(-self.mu_pho_abs*self.l_convolve-self.mu_pho_env*self.t_convolve - self.mu_pho_env2*self.t2_convolve)
                 self.dif=self.fit-d1
                 return self.dif
+        elif self.bkg is True:
+            print('This will fit the data considering a background removal was performed.'+ 
+                  '\nMake sure mu*rho(env) is properly input in setParameters().'+
+                  '\nmu*rho of the capsule is not fitted at this stage! but mandatory')
+            self.fit_parameters=[self.mu_pho_abs, self.r_sam, self.r0] 
+
+            def optfit(fit_parameters, c1, d1):
+                self.mu_pho_abs, self.r_sam, self.r0 = fit_parameters
+                self.r0_env=self.r0
+                for x in range(len(c1)):
+                    self.t[x]=np.abs((c1[x]-self.r0_env))
+                    self.delta[x] = np.abs(c1[x] - self.r0_env)
+                    if (self.t[x]<self.r_sam) & (self.delta[x]<=self.r_sam):
+                        self.l[x]=2*np.sqrt(self.r_sam**2-(self.t[x])**2)
+                        self.t_env[x] = 2*np.sqrt(self.r_env**2-self.delta[x]**2)-self.l[x]
+                    elif (self.t[x]>self.r_sam) & (self.delta[x]<=self.r_env) & (self.delta[x]>=self.r_sam):
+                        self.l[x]=0
+                        self.t_env[x]=2*np.sqrt(self.r_env**2-self.delta[x]**2)
+                    else:
+                        self.l[x]=0
+                        self.t_env[x]=0
+    
+                self.delta_s=np.abs(c1 - self.r0)
+                self.t_sam[np.nonzero(self.delta_s>self.r_sam)]=0
+                for y in range(len(c1)):
+                    self.delta_s[y] = np.abs(c1[y] - self.r0)
+                    if (self.delta_s[y]<=self.r_sam):
+                        self.t_sam[y]=2*np.sqrt(self.r_sam**2-(self.delta_s[y])**2)
+                    else:
+                        self.t_sam[y]=0
+                self.l_convolve=(np.convolve(self.beam/self.beam.sum(),self.t_sam, mode='same'))
+                self.t_convolve=(np.convolve(self.beam/self.beam.sum(), self.t_env, mode='same'))
+                self.fit=self.cst*np.exp(-self.mu_pho_abs*self.l_convolve+self.mu_pho_env*self.l_convolve)
+                self.dif=self.fit-d1
+                return self.dif
         else:
             self.fit_parameters=[self.mu_pho_abs, self.mu_pho_env, self.r_sam, self.r0, self.r_env] 
 
@@ -1089,8 +1130,13 @@ class Density():
         self.xfit=scipy.optimize.leastsq(optfit, self.fit_parameters, args =(self.c1, self.d1))[0]
         self.dif = optfit (self.xfit, self.c1, self.d1)
         self.fit=self.dif+self.d1
-        print('Standard deviation of residual is : ', '%.3f'%(100*self.dif.std()), chr(37))
-        print("mu*pho(sample) = ", '%.3f'%(self.xfit[0]),"\n", "mu*pho(capsule) = " , '%.3f'%(self.xfit[1]),"\n", "sample radius(microns) = " , round(1e4*(self.xfit[2])),"\n", "capsule radius (microns) = ", round(1e4*self.r_env))
+        if self.bkg is True:
+            print('\n','Standard deviation of residual is : ', '%.3f'%(100*self.dif.std()), chr(37))
+            print(" mu*pho(sample) = ", '%.3f'%(self.xfit[0]),"\n", "mu*pho(capsule) = " , '%.3f'%(self.mu_pho_env) , "(fixed)","\n", "sample radius(microns) = " , round(1e4*(self.xfit[1])),"\n", "capsule radius (microns) = None")
+        else:
+            print('\n','Standard deviation of residual is : ', '%.3f'%(100*self.dif.std()), chr(37))
+            print(" mu*pho(sample) = ", '%.3f'%(self.xfit[0]),"\n", "mu*pho(capsule) = " , '%.3f'%(self.xfit[1]),"\n", "sample radius(microns) = " , round(1e4*(self.xfit[2])),"\n", "capsule radius (microns) = ", round(1e4*self.r_env))
+
         plt.figure('Fitting')
         plt.plot(self.c,self.d,'ko')
         plt.plot(self.c1, self.fit,'r-')
